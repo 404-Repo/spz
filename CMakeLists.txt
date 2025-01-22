@@ -113,8 +113,8 @@ if(BUILD_PYTHON_BINDINGS)
     )
 endif()
 
-# Configure build settings for Release
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
+# Configure build settings for Release, ReleaseWithDebugInfo is used for profiling
+if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "ReleaseWithDebugInfo")
     if (ipo_supported)
         message(STATUS "IPO / LTO enabled")
         set_property(TARGET spz_shared PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)

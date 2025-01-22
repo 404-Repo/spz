@@ -1022,57 +1022,103 @@ static std::vector<uint8_t> cloudToByteBuffer(const GaussianCloud &cloud,
   return out;
 }
 
-bool compress(const std::span<const uint8_t> rawData,
-             int compressionLevel,
-             std::vector<uint8_t> &output) {
-    MemBuf memBuf(rawData.data(), rawData.data() + rawData.size());
-    std::istream inStream(&memBuf);
+bool compress(const std::span<const uint8_t> rawData, int compressionLevel,
+              std::vector<uint8_t> &output) {
+  MemBuf memBuf(rawData.data(), rawData.data() + rawData.size());
+  std::istream inStream(&memBuf);
 
-    GaussianCloud g = parseSplatFromStream(inStream);
-    if (g.numPoints == 0) {
-        SpzLog("[SPZ: ERROR] Parsed GaussianCloud is empty.");
-        return false;
-    }
+  GaussianCloud g = parseSplatFromStream(inStream);
+  if (g.numPoints == 0) {
+    SpzLog("[SPZ: ERROR] Parsed GaussianCloud is empty.");
+    return false;
+  }
 
-    PackedGaussians packed = packGaussians(g);
+  PackedGaussians packed = packGaussians(g);
 
-    std::stringstream ss;
-    serializePackedGaussians(packed, ss);
-    const std::string uncompressed = ss.str();
+  std::stringstream ss;
+  serializePackedGaussians(packed, ss);
+  const std::string uncompressed = ss.str();
 
-    if (!compressZstd(reinterpret_cast<const uint8_t *>(uncompressed.data()),
-                      uncompressed.size(), &output, compressionLevel)) {
-        SpzLog("[SPZ: ERROR] Zstd compression failed.");
-        return false;
-    }
+  if (!compressZstd(reinterpret_cast<const uint8_t *>(uncompressed.data()),
+                    uncompressed.size(), &output, compressionLevel)) {
+    SpzLog("[SPZ: ERROR] Zstd compression failed.");
+    return false;
+  }
 
-    return true;
+  return true;
 }
 
-bool decompress(const std::span<const uint8_t> input,
-               bool includeNormals,
-               std::vector<uint8_t> &output) {
-    if (!decompressZstd(input.data(), input.size(), &output)) {
-        return false;
-    }
+bool decompress(const std::span<const uint8_t> input, bool includeNormals,
+                std::vector<uint8_t> &output) {
+  std::vector<uint8_t> decompressed;
+  if (!decompressZstd(input.data(), input.size(), &decompressed) ||
+      decompressed.empty()) {
+    return false;
+  }
 
-    if (output.empty()) {
-        return false;
-    }
+  MemBuf memBuffer(decompressed.data(),
+                   decompressed.data() + decompressed.size());
+  std::istream stream(&memBuffer);
+  PackedGaussians packed = deserializePackedGaussians(stream);
 
-    MemBuf memBuffer(output.data(),
-                     output.data() + output.size());
-    std::istream stream(&memBuffer);
+  if (packed.numPoints == 0 && packed.positions.empty()) {
+    return false;
+  }
 
-    PackedGaussians packed = deserializePackedGaussians(stream);
-    if (packed.numPoints == 0 && packed.positions.empty()) {
-        return false;
-    }
+  GaussianCloud cloud = unpackGaussians(packed);
 
-    GaussianCloud cloud = unpackGaussians(packed);
-    output = cloudToByteBuffer(cloud, includeNormals);
+  std::vector<uint8_t> body = cloudToByteBuffer(cloud, includeNormals);
 
-    return true;
+  std::string header;
+  header.reserve(
+      512);
+
+  header += "ply\n";
+  header += "format binary_little_endian 1.0\n";
+
+  header += "element vertex ";
+  header += std::to_string(cloud.numPoints);
+  header += "\n";
+
+  header += "property float x\n";
+  header += "property float y\n";
+  header += "property float z\n";
+
+  if (includeNormals) {
+    header += "property float nx\n";
+    header += "property float ny\n";
+    header += "property float nz\n";
+  }
+
+  header += "property float f_dc_0\n";
+  header += "property float f_dc_1\n";
+  header += "property float f_dc_2\n";
+
+  int shDim = 0;
+  if (cloud.numPoints > 0) {
+    shDim = static_cast<int>(cloud.sh.size()) / (cloud.numPoints * 3);
+  }
+  for (int i = 0; i < shDim * 3; ++i) {
+    header += "property float f_rest_";
+    header += std::to_string(i);
+    header += "\n";
+  }
+
+  header += "property float opacity\n"
+            "property float scale_0\n"
+            "property float scale_1\n"
+            "property float scale_2\n"
+            "property float rot_0\n"
+            "property float rot_1\n"
+            "property float rot_2\n"
+            "property float rot_3\n"
+            "end_header\n";
+
+  output.resize(header.size() + body.size());
+  std::memcpy(output.data(), header.data(), header.size());
+  std::memcpy(output.data() + header.size(), body.data(), body.size());
+
+  return true;
 }
 
 } // namespace spz
