@@ -8,6 +8,11 @@ This is a modified version of the [SPZ library](https://github.com/nianticlabs/s
 - **Improved Performance**: The default `march` target is set to `x86-64-v3`, along with various small fixes and optimizations for better performance.
 - **Python Bindings**: Python bindings have been implemented using `pybind11`.
 
+## Recommendations and Good to Know
+In my tests for this project, Clang 19.1.7 generated significantly better code than GCC 14.2.1. I therefore recommend using Clang.\
+The resulting file hash after decompression by SPZ will differ if the library is compiled with -O3 -march=x86-64-v3 versus using just -O2 or -O3, due to differences in instruction generation, floating-point operation handling, and compiler-specific optimizations.\
+Furthermore, even when compiling with identical flags (e.g., -march=x86-64-v3), the file hash will still differ between GCC and Clang builds for the same reasons.
+
 ## C++ Interface
 ```C
 std::vector<uint8_t> compress(const std::vector<uint8_t> &rawData, int compressionLevel);

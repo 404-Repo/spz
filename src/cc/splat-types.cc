@@ -1,7 +1,5 @@
 #include "splat-types.h"
 
-#include <cmath>
-
 namespace spz {
 
 float halfToFloat(Half h) {
@@ -15,10 +13,14 @@ float halfToFloat(Half h) {
     return signMul * std::pow(2.0f, -14.0f) * static_cast<float>(mantissa) / 1024.0f;
   }
 
-  if (exponent == 31) {
-    // Infinity or NaN.
-    return mantissa != 0 ? 0.0f / 0.0f : signMul * 1.0f / 0.0f;
-  }
+    if (exponent == 31) {
+        // Infinity or NaN
+        if (mantissa != 0) {
+            return std::numeric_limits<float>::quiet_NaN();
+        } else {
+            return signMul * std::numeric_limits<float>::infinity();
+        }
+    }
 
   // non-zero exponent implies 1 in the mantissa decimal.
   return signMul * std::pow(2.0f, static_cast<float>(exponent) - 15.0f)

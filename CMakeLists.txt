@@ -21,6 +21,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if (MSVC)
+    add_compile_definitions(_USE_MATH_DEFINES)
+endif()
+
 # Include external content manager
 include(FetchContent)
 include(CheckIPOSupported)
@@ -49,6 +53,7 @@ FetchContent_MakeAvailable(zstd)
 set(ZSTD_MULTITHREAD ON CACHE BOOL "Enable multithreading in Zstd" FORCE)
 if (${USE_STATIC_ZSTD})
   set(ZSTD_BUILD_STATIC ${USE_STATIC_ZSTD} CACHE BOOL "Build static Zstd library" FORCE)
+  set(ZSTD_BUILD_SHARED OFF CACHE BOOL "Build shared Zstd library" FORCE)
 elseif()
   set(ZSTD_BUILD_SHARED ON CACHE BOOL "Build shared Zstd library" FORCE)
 endif()
@@ -79,21 +84,14 @@ set(EXECUTABLE_SOURCES
 
 # Shared library target
 add_library(spz_shared SHARED ${LIBRARY_SOURCES})
-target_compile_definitions(spz_shared PRIVATE SPZ_BUILDING_SHARED)
 set_target_properties(spz_shared PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
-    OUTPUT_NAME "spz"
 )
 
 # Static library target
 add_library(spz_static STATIC ${LIBRARY_SOURCES})
-target_compile_definitions(spz_static
-    PRIVATE
-        SPZ_BUILDING_STATIC
-)
 set_target_properties(spz_static PROPERTIES
-    OUTPUT_NAME "spz"
     VERSION ${PROJECT_VERSION}
     POSITION_INDEPENDENT_CODE ON
 )
@@ -148,7 +146,7 @@ if(BUILD_PYTHON_BINDINGS)
 endif()
 
 # Release build optimizations
-if(CMAKE_BUILD_TYPE MATCHES "Release|RelWithDebInfo")
+if(CMAKE_BUILD_TYPE MATCHES "Release")
     # Enable LTO if supported
     if(IPO_SUPPORTED)
         message(STATUS "Enabling Link Time Optimization (LTO)")
@@ -164,18 +162,20 @@ if(CMAKE_BUILD_TYPE MATCHES "Release|RelWithDebInfo")
         message(STATUS "Setting -march=native")
         set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native")
     else()
-        if(CMAKE_SYSTEM_PROCESSOR MATCHES "86")
-            # For x86/x64 processors
-            if(NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "march=")
-                set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=x86-64-v3")
+        if (NOT MSVC)
+            if(CMAKE_SYSTEM_PROCESSOR MATCHES "86")
+                # For x86/x64 processors
+                if(NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "march=")
+                    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=x86-64-v3")
+                endif()
+            elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch")
+                # For ARM processors
+                if(NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "march=")
+                    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=armv8.2-a")
+                endif()
+            else()
+                message(WARNING "Unsupported architecture: -march option not set.")
             endif()
-        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch")
-            # For ARM processors
-            if(NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "march=")
-                set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=armv8.2-a")
-            endif()
-        else()
-            message(WARNING "Unsupported architecture: -march option not set.")
         endif()
     endif()
 
