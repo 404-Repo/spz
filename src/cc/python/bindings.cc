@@ -13,7 +13,7 @@ PYBIND11_MODULE(pyspz, m) {
     m.doc() = "Python bindings for SPZ compression/decompression";
 
     m.def("compress",
-          [](const py::buffer &rawData, int compressionLevel = 1) {
+          [](const py::buffer &rawData, int compressionLevel = 1, int workers = 1) {
               py::buffer_info buf = rawData.request();
               if (buf.format != py::format_descriptor<uint8_t>::format()) {
                   throw std::runtime_error("Expected buffer of type uint8");
@@ -25,7 +25,7 @@ PYBIND11_MODULE(pyspz, m) {
               );
 
               std::vector<uint8_t> compressedData;
-              bool success = spz::compress(data, compressionLevel, compressedData);
+              bool success = spz::compress(data, compressionLevel, workers, compressedData);
               if (!success) {
                   throw std::runtime_error("Compression failed");
               }
@@ -37,7 +37,8 @@ PYBIND11_MODULE(pyspz, m) {
           },
           py::arg("raw_data"),
           py::arg("compression_level") = 1,
-          "Compress PLY raw data with the specified compression level."
+          py::arg("workers") = 1,
+          "Compress PLY raw data with the specified compression level and number of workers."
     );
 
 

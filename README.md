@@ -8,10 +8,34 @@ This is a modified version of the [SPZ library](https://github.com/nianticlabs/s
 - **Improved Performance**: The default `march` target is set to `x86-64-v3`, along with various small fixes and optimizations for better performance.
 - **Python Bindings**: Python bindings have been implemented using `pybind11`.
 
-## Interface
+## C++ Interface
 ```C
 std::vector<uint8_t> compress(const std::vector<uint8_t> &rawData, int compressionLevel);
 std::vector<uint8_t> decompress(const std::vector<uint8_t> &input, bool includeNormals);
+```
+
+## Python Interface
+```Python
+def compress(raw_data: bytes, compression_level: int = 1, workers: int = 1) -> bytes:
+    """
+    Compresses the provided raw data.
+
+    :param raw_data: Data to compress as a bytes object.
+    :param compression_level: Level of compression (default is 1).
+    :param workers: Number of worker threads to use (default is 1).
+    :return: Compressed data as a bytes object.
+    :raises RuntimeError: If compression fails.
+    """
+
+def decompress(input_data: bytes, include_normals: bool) -> bytes:
+    """
+    Decompresses the provided input data.
+
+    :param input_data: Compressed data as a bytes object.
+    :param include_normals: Whether to include normals in the decompressed data.
+    :return: Decompressed data as a bytes object.
+    :raises RuntimeError: If decompression fails.
+    """
 ```
 
 ## File Format
@@ -99,7 +123,7 @@ import pyspz
 import os
 import time
 
-def compress_ply(input_ply_path, compressed_path, compression_level=1):
+def compress_ply(input_ply_path, compressed_path, compression_level=1, int workers=1):
     """
     Compresses a PLY file and saves the compressed data.
     """
@@ -107,7 +131,7 @@ def compress_ply(input_ply_path, compressed_path, compression_level=1):
         raw_data = f.read()
 
     start_time = time.perf_counter()
-    compressed_data = pyspz.compress(raw_data, compression_level)
+    compressed_data = pyspz.compress(raw_data, compression_level, workers)
     end_time = time.perf_counter()
 
     with open(compressed_path, 'wb') as f:
@@ -146,7 +170,8 @@ def main():
         return
 
     compression_level = 3
-    compress_ply(input_ply, compressed_file, compression_level)
+    workers = 3
+    compress_ply(input_ply, compressed_file, compression_level, workers)
     decompress_ply(compressed_file, decompressed_ply, include_normals=False)
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ struct PackedGaussians {
 };
 
 // Saves Gaussian splat in packed format, returning a vector of bytes.
-bool saveSpz(const GaussianCloud &g, std::vector<uint8_t> *output, int compressionLevel);
+bool saveSpz(const GaussianCloud &g, std::vector<uint8_t> *output, int compressionLevel, int workers);
 
 // Loads Gaussian splat from a vector of bytes in packed format.
 GaussianCloud loadSpz(const std::vector<uint8_t> &data);
@@ -67,7 +67,7 @@ PackedGaussians loadSpzPacked(const uint8_t* data, int size);
 PackedGaussians loadSpzPacked(const std::vector<uint8_t> &data);
 
 // Saves Gaussian splat in packed format to a file
-bool saveSpz(const GaussianCloud &g, const std::string &filename, int compressionLevel);
+bool saveSpz(const GaussianCloud &g, const std::string &filename, int compressionLevel, int workers);
 
 // Loads Gaussian splat from a file in packed format
 GaussianCloud loadSpz(const std::string &filename);
@@ -83,6 +83,7 @@ GaussianCloud loadSplatFromMemory(const std::vector<char> &buffer);
 
 bool compress(const std::span<const uint8_t> rawData,
              int compressionLevel,
+             int workers,
              std::vector<uint8_t> &output);
 bool decompress(const std::span<const uint8_t> input,
                bool includeNormals,

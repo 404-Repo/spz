@@ -194,7 +194,7 @@ bool decompressZstd(const uint8_t *compressed, size_t size,
 }
 
 bool compressZstd(const uint8_t *data, size_t size, std::vector<uint8_t> *out,
-                  int compressionLevel = 1) {
+                  int compressionLevel = 1, int workers = 1) {
   constexpr auto ZSTD_MIN_COMPRESSION_LEVEL = 1;
   size_t const bound = ZSTD_compressBound(size);
   out->resize(bound);
@@ -203,8 +203,20 @@ bool compressZstd(const uint8_t *data, size_t size, std::vector<uint8_t> *out,
   int effectiveCompressionLevel =
       std::max(compressionLevel, ZSTD_MIN_COMPRESSION_LEVEL);
 
+  ZSTD_CCtx *cctx = ZSTD_createCCtx();
+  if (!cctx) {
+    SpzLog("[SPZ: ERROR] Failed to create ZSTD compression context");
+    return false;
+  }
+
+  ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel,
+                         effectiveCompressionLevel);
+  ZSTD_CCtx_setParameter(cctx, ZSTD_c_nbWorkers, workers);
+
   size_t const compressedSize =
-      ZSTD_compress(out->data(), bound, data, size, compressionLevel);
+      ZSTD_compress2(cctx, out->data(), bound, data, size);
+  ZSTD_freeCCtx(cctx);
+
   if (ZSTD_isError(compressedSize)) {
     SpzLog("[SPZ: ERROR] Zstd compression error: %s",
            ZSTD_getErrorName(compressedSize));
@@ -537,7 +549,7 @@ PackedGaussians deserializePackedGaussians(std::istream &in) {
 }
 
 bool saveSpz(const GaussianCloud &g, std::vector<uint8_t> *out,
-             int compressionLevel = 1) {
+             int compressionLevel = 1, int workers = 1) {
   std::string data;
   {
     PackedGaussians packed = packGaussians(g);
@@ -588,9 +600,9 @@ GaussianCloud loadSpz(const std::vector<uint8_t> &data) {
 }
 
 bool saveSpz(const GaussianCloud &g, const std::string &filename,
-             int compressionLevel = 1) {
+             int compressionLevel = 1, int workers = 1) {
   std::vector<uint8_t> data;
-  if (!saveSpz(g, &data, compressionLevel))
+  if (!saveSpz(g, &data, compressionLevel, workers))
     return false;
   std::ofstream out(filename, std::ios::binary | std::ios::out);
   out.write(reinterpret_cast<const char *>(data.data()), data.size());
@@ -1022,7 +1034,7 @@ static std::vector<uint8_t> cloudToByteBuffer(const GaussianCloud &cloud,
   return out;
 }
 
-bool compress(const std::span<const uint8_t> rawData, int compressionLevel,
+bool compress(const std::span<const uint8_t> rawData, int compressionLevel, int workers,
               std::vector<uint8_t> &output) {
   MemBuf memBuf(rawData.data(), rawData.data() + rawData.size());
   std::istream inStream(&memBuf);
@@ -1040,7 +1052,7 @@ bool compress(const std::span<const uint8_t> rawData, int compressionLevel,
   const std::string uncompressed = ss.str();
 
   if (!compressZstd(reinterpret_cast<const uint8_t *>(uncompressed.data()),
-                    uncompressed.size(), &output, compressionLevel)) {
+                    uncompressed.size(), &output, compressionLevel, workers)) {
     SpzLog("[SPZ: ERROR] Zstd compression failed.");
     return false;
   }
@@ -1070,8 +1082,7 @@ bool decompress(const std::span<const uint8_t> input, bool includeNormals,
   std::vector<uint8_t> body = cloudToByteBuffer(cloud, includeNormals);
 
   std::string header;
-  header.reserve(
-      512);
+  header.reserve(512);
 
   header += "ply\n";
   header += "format binary_little_endian 1.0\n";
