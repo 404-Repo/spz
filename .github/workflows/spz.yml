@@ -25,13 +25,19 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build
+          sudo apt-get install -y build-essential cmake ninja-build python3-pip
 
       - name: Set up C++ environment on macOS
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install cmake ninja
+          brew install cmake ninja python3
+
+      - name: Set up Python 3.10 on Windows
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
       - name: Configure CMake with MSBuild (Windows)
         if: runner.os == 'Windows'
@@ -57,3 +63,15 @@ jobs:
       - name: Build with Ninja (Linux/macOS)
         if: runner.os != 'Windows'
         run: cmake --build build --parallel
+
+      - name: Install Python spz package on macOS using a virtual environment
+        if: runner.os == 'macOS'
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install .
+
+      - name: Install Python spz package on Linux/Windows using pip
+        if: runner.os != 'macOS'
+        run: pip3 install .

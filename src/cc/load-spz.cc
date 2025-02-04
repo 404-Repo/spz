@@ -558,7 +558,7 @@ bool saveSpz(const GaussianCloud &g, std::vector<uint8_t> *out,
     data = ss.str();
   }
   return compressZstd(reinterpret_cast<const uint8_t *>(data.data()),
-                      data.size(), out, compressionLevel);
+                      data.size(), out, compressionLevel, workers);
 }
 
 PackedGaussians loadSpzPacked(const uint8_t *data, int size) {
