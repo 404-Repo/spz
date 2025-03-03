@@ -75,3 +75,22 @@ jobs:
       - name: Install Python spz package on Linux/Windows using pip
         if: runner.os != 'macOS'
         run: pip3 install .
+
+  build_wasm:
+    name: build SPZ WASM (Emscripten)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Emscripten SDK
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.4
+
+      - name: Configure and build SPZ WASM
+        run: |
+          mkdir build_wasm
+          cd build_wasm
+          emcmake cmake -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build . -- -j$(nproc)

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>SPZ Compression/Decompression Test</title>
+  </head>
+  <body>
+    <h1>SPZ Compression and Decompression Test Using WebAssembly</h1>
+    <hr>
+    <h2>Compression</h2>
+    <p>Select an input file (e.g., a PLY file) to compress into SPZ:</p>
+    <input type="file" id="compress-file-input">
+    <br><br>
+    <button id="compress-btn" disabled>Compress File</button>
+    <div id="compress-status"></div>
+    <hr>
+    <h2>Decompression</h2>
+    <p>Select an input file (e.g., an SPZ file) to decompress to PLY:</p>
+    <input type="file" id="decompress-file-input">
+    <br>
+    <label>
+      <input type="checkbox" id="include-normals"> Include Normals
+    </label>
+    <br><br>
+    <button id="decompress-btn" disabled>Decompress File</button>
+    <div id="decompress-status"></div>
+
+    <!-- Load the Emscripten-generated module -->
+    <script src="spz_wasm.js"></script>
+    <script type="text/javascript">
+      // Wait for the WebAssembly module to load
+      Module.onRuntimeInitialized = function() {
+        document.getElementById("compress-btn").disabled = false;
+        document.getElementById("decompress-btn").disabled = false;
+
+        document.getElementById("compress-btn").addEventListener("click", function() {
+          var fileInput = document.getElementById("compress-file-input");
+          var statusDiv = document.getElementById("compress-status");
+          statusDiv.innerHTML = "";
+
+          if (fileInput.files.length === 0) {
+            statusDiv.innerHTML = "<p>Please choose a file first.</p>";
+            return;
+          }
+          var file = fileInput.files[0];
+          var reader = new FileReader();
+          reader.onload = function(e) {
+            var arrayBuffer = e.target.result;
+            var inputData = new Uint8Array(arrayBuffer);
+            var inputSize = inputData.length;
+
+            var inputPtr = Module.ccall("malloc", "number", ["number"], [inputSize]);
+            Module.HEAPU8.set(inputData, inputPtr);
+
+            var outputPtrPtr = Module.ccall("malloc", "number", ["number"], [4]);
+            var outputSizePtr = Module.ccall("malloc", "number", ["number"], [4]);
+
+            var startTime = performance.now();
+
+            var retCode = Module.ccall("compress_spz", "number",
+              ["number", "number", "number", "number", "number"],
+              [inputPtr, inputSize, 3, outputPtrPtr, outputSizePtr]
+            );
+
+            var endTime = performance.now();
+            var compressionTime = endTime - startTime;
+            console.log(`Compression time: ${compressionTime.toFixed(2)} ms`);
+
+            if (retCode !== 0) {
+              statusDiv.innerHTML = "<p>Error during compression: code " + retCode + "</p>";
+              Module.ccall("free", "void", ["number"], [inputPtr]);
+              Module.ccall("free", "void", ["number"], [outputPtrPtr]);
+              Module.ccall("free", "void", ["number"], [outputSizePtr]);
+              return;
+            }
+
+            var outputPtr = Module.getValue(outputPtrPtr, "i32");
+            var outputSize = Module.getValue(outputSizePtr, "i32");
+
+            var compressedData = new Uint8Array(Module.HEAPU8.buffer, outputPtr, outputSize);
+            var blob = new Blob([compressedData], { type: 'application/octet-stream' });
+            var url = URL.createObjectURL(blob);
+            var downloadLink = document.createElement("a");
+            downloadLink.href = url;
+            downloadLink.download = "compressed.spz";
+            downloadLink.textContent = "Download Compressed File";
+            statusDiv.appendChild(downloadLink);
+
+            Module.ccall("free", "void", ["number"], [inputPtr]);
+            Module.ccall("free", "void", ["number"], [outputPtrPtr]);
+            Module.ccall("free", "void", ["number"], [outputSizePtr]);
+            Module.ccall("free", "void", ["number"], [outputPtr]);
+          };
+          reader.readAsArrayBuffer(file);
+        });
+
+        document.getElementById("decompress-btn").addEventListener("click", function() {
+          var fileInput = document.getElementById("decompress-file-input");
+          var statusDiv = document.getElementById("decompress-status");
+          statusDiv.innerHTML = "";
+
+          if (fileInput.files.length === 0) {
+            statusDiv.innerHTML = "<p>Please choose a file first.</p>";
+            return;
+          }
+          var file = fileInput.files[0];
+          var reader = new FileReader();
+          reader.onload = function(e) {
+            var arrayBuffer = e.target.result;
+            var inputData = new Uint8Array(arrayBuffer);
+            var inputSize = inputData.length;
+
+            var inputPtr = Module.ccall("malloc", "number", ["number"], [inputSize]);
+            Module.HEAPU8.set(inputData, inputPtr);
+
+            var outputPtrPtr = Module.ccall("malloc", "number", ["number"], [4]);
+            var outputSizePtr = Module.ccall("malloc", "number", ["number"], [4]);
+
+            var includeNormals = document.getElementById("include-normals").checked ? 1 : 0;
+
+            var startTime = performance.now();
+
+            var retCode = Module.ccall("decompress_spz", "number",
+              ["number", "number", "number", "number", "number"],
+              [inputPtr, inputSize, includeNormals, outputPtrPtr, outputSizePtr]
+            );
+
+            var endTime = performance.now();
+            var decompressionTime = endTime - startTime;
+            console.log(`Decompression time: ${decompressionTime.toFixed(2)} ms`);
+
+            if (retCode !== 0) {
+              statusDiv.innerHTML = "<p>Error during decompression: code " + retCode + "</p>";
+              Module.ccall("free", "void", ["number"], [inputPtr]);
+              Module.ccall("free", "void", ["number"], [outputPtrPtr]);
+              Module.ccall("free", "void", ["number"], [outputSizePtr]);
+              return;
+            }
+
+            var outputPtr = Module.getValue(outputPtrPtr, "i32");
+            var outputSize = Module.getValue(outputSizePtr, "i32");
+
+            var decompressedData = new Uint8Array(Module.HEAPU8.buffer, outputPtr, outputSize);
+            var blob = new Blob([decompressedData], { type: 'application/octet-stream' });
+            var url = URL.createObjectURL(blob);
+            var downloadLink = document.createElement("a");
+            downloadLink.href = url;
+            downloadLink.download = "decompressed.ply";
+            downloadLink.textContent = "Download Decompressed File";
+            statusDiv.appendChild(downloadLink);
+
+            Module.ccall("free", "void", ["number"], [inputPtr]);
+            Module.ccall("free", "void", ["number"], [outputPtrPtr]);
+            Module.ccall("free", "void", ["number"], [outputSizePtr]);
+            Module.ccall("free", "void", ["number"], [outputPtr]);
+          };
+          reader.readAsArrayBuffer(file);
+        });
+      };
+    </script>
+  </body>
+</html>

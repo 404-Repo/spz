@@ -160,7 +160,7 @@ struct PackedGaussiansHeader {
 bool decompressZstd(const uint8_t *compressed, size_t size,
                     std::vector<uint8_t> *out) {
   // Estimate decompressed size
-  size_t const decompressedSize = ZSTD_getFrameContentSize(
+  unsigned long long const decompressedSize = ZSTD_getFrameContentSize(
       reinterpret_cast<const void *>(compressed), size);
   if (decompressedSize == ZSTD_CONTENTSIZE_ERROR) {
     SpzLog("[SPZ: ERROR] Not a valid Zstd frame.");
@@ -181,7 +181,7 @@ bool decompressZstd(const uint8_t *compressed, size_t size,
     out->resize(ret);
     return true;
   } else {
-    out->resize(decompressedSize);
+    out->resize(static_cast<size_t>(decompressedSize));
     size_t const ret =
         ZSTD_decompress(out->data(), out->size(), compressed, size);
     if (ZSTD_isError(ret)) {
@@ -1034,8 +1034,8 @@ static std::vector<uint8_t> cloudToByteBuffer(const GaussianCloud &cloud,
   return out;
 }
 
-bool compress(const std::span<const uint8_t> rawData, int compressionLevel, int workers,
-              std::vector<uint8_t> &output) {
+bool compress(const std::span<const uint8_t> rawData, int compressionLevel,
+              int workers, std::vector<uint8_t> &output) {
   MemBuf memBuf(rawData.data(), rawData.data() + rawData.size());
   std::istream inStream(&memBuf);
 

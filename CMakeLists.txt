@@ -21,11 +21,20 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if (MSVC)
+if(MSVC)
     add_compile_definitions(_USE_MATH_DEFINES)
 endif()
 
-# Include external content manager
+# Determine if building for WebAssembly
+set(IS_WASM OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    set(IS_WASM ON)
+    message(STATUS "Configuring for WebAssembly using Emscripten")
+    # Disable features that are not relevant for WebAssembly:
+    set(BUILD_PYTHON_BINDINGS OFF CACHE BOOL "Disable Python bindings for wasm" FORCE)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Prefer static linking for wasm" FORCE)
+endif()
+
 include(FetchContent)
 include(CheckIPOSupported)
 
@@ -41,20 +50,29 @@ if(BUILD_PYTHON_BINDINGS)
     FetchContent_MakeAvailable(pybind11)
 endif()
 
-# ZSTD setup
+# Check for LTO (Link Time Optimization) support
+check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_ERROR)
+
+# ZSTD setup via FetchContent
 FetchContent_Declare(
     zstd
     GIT_REPOSITORY https://github.com/facebook/zstd.git
-    GIT_TAG v1.5.6
+    GIT_TAG v1.5.7
 )
 FetchContent_MakeAvailable(zstd)
 
 # Configure ZSTD build options
-set(ZSTD_MULTITHREAD ON CACHE BOOL "Enable multithreading in Zstd" FORCE)
-if (${USE_STATIC_ZSTD})
+if(IS_WASM)
+  set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "Enable multithreading in Zstd" FORCE)
+  message(STATUS "Disabling ZSTD multithreading for WASM")
+else()
+  set(ZSTD_MULTITHREAD_SUPPORT ON CACHE BOOL "Enable multithreading in Zstd" FORCE)
+endif()
+
+if(${USE_STATIC_ZSTD})
   set(ZSTD_BUILD_STATIC ${USE_STATIC_ZSTD} CACHE BOOL "Build static Zstd library" FORCE)
   set(ZSTD_BUILD_SHARED OFF CACHE BOOL "Build shared Zstd library" FORCE)
-elseif()
+else()
   set(ZSTD_BUILD_SHARED ON CACHE BOOL "Build shared Zstd library" FORCE)
 endif()
 
@@ -68,10 +86,6 @@ else()
     add_library(zstd::zstd ALIAS libzstd_shared)
 endif()
 
-# Check for LTO support
-check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_ERROR)
-
-# Define source files
 set(LIBRARY_SOURCES
     src/cc/load-spz.cc
     src/cc/splat-c-types.cc
@@ -83,11 +97,13 @@ set(EXECUTABLE_SOURCES
 )
 
 # Shared library target
-add_library(spz_shared SHARED ${LIBRARY_SOURCES})
-set_target_properties(spz_shared PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-)
+if(NOT IS_WASM)
+    add_library(spz_shared SHARED ${LIBRARY_SOURCES})
+    set_target_properties(spz_shared PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+    )
+endif()
 
 # Static library target
 add_library(spz_static STATIC ${LIBRARY_SOURCES})
@@ -97,7 +113,13 @@ set_target_properties(spz_static PROPERTIES
 )
 
 # Common include directories for both libraries
-foreach(target spz_shared spz_static)
+if(NOT IS_WASM)
+    set(SPZ_LIBS spz_shared spz_static)
+else()
+    set(SPZ_LIBS spz_static)
+endif()
+
+foreach(target ${SPZ_LIBS})
     target_include_directories(${target}
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
@@ -108,36 +130,58 @@ foreach(target spz_shared spz_static)
     target_link_libraries(${target} PRIVATE zstd::zstd)
 endforeach()
 
-# Executable target
-add_executable(spz_exe ${EXECUTABLE_SOURCES})
-set_target_properties(spz_exe PROPERTIES OUTPUT_NAME "spz")
-target_include_directories(spz_exe PRIVATE src src/cc)
-target_link_libraries(spz_exe PRIVATE spz_static zstd::zstd)
+# Executable target (skipped for Emscripten builds)
+if(NOT IS_WASM)
+    add_executable(spz_exe ${EXECUTABLE_SOURCES})
+    set_target_properties(spz_exe PROPERTIES OUTPUT_NAME "spz")
+    target_include_directories(spz_exe PRIVATE src src/cc)
+    target_link_libraries(spz_exe PRIVATE spz_static zstd::zstd)
 
-# Sanitizer configuration
-if(ENABLE_ASAN OR ENABLE_UBSAN)
-    set(SANITIZER_FLAGS "")
-
-    if(ENABLE_ASAN)
-        message(STATUS "Address Sanitizer (ASAN) enabled for executable")
-        list(APPEND SANITIZER_FLAGS "-fsanitize=address")
+    # Sanitizer configuration (only for traditional builds)
+    if(ENABLE_ASAN OR ENABLE_UBSAN)
+        set(SANITIZER_FLAGS "")
+        if(ENABLE_ASAN)
+            message(STATUS "Address Sanitizer (ASAN) enabled for executable")
+            list(APPEND SANITIZER_FLAGS "-fsanitize=address")
+        endif()
+        if(ENABLE_UBSAN)
+            message(STATUS "Undefined Behavior Sanitizer (UBSAN) enabled for executable")
+            list(APPEND SANITIZER_FLAGS "-fsanitize=undefined")
+        endif()
+        target_compile_options(spz_exe PRIVATE ${SANITIZER_FLAGS})
+        target_link_options(spz_exe PRIVATE ${SANITIZER_FLAGS})
     endif()
-
-    if(ENABLE_UBSAN)
-        message(STATUS "Undefined Behavior Sanitizer (UBSAN) enabled for executable")
-        list(APPEND SANITIZER_FLAGS "-fsanitize=undefined")
-    endif()
-
-    target_compile_options(spz_exe PRIVATE ${SANITIZER_FLAGS})
-    target_link_options(spz_exe PRIVATE ${SANITIZER_FLAGS})
+else()
+    message(STATUS "Skipping executable target 'spz_exe' for WebAssembly build.")
 endif()
 
-# Python bindings configuration
+# Add wasm.cc target for Emscripten builds
+if(IS_WASM)
+    add_executable(spz_wasm src/cc/wasm.cc)
+    target_link_libraries(spz_wasm PRIVATE spz_static)
+    target_link_options(spz_wasm PRIVATE
+        "-sWASM=1"
+        "-sMODULARIZE=0"
+        "-sEXPORTED_FUNCTIONS=['_compress_spz','_decompress_spz','_malloc','_free']"
+        "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','getValue']"
+        "-sALLOW_MEMORY_GROWTH=1"
+        "-sINITIAL_MEMORY=268435456"  # 256 MB initial memory
+    )
+
+    # Copy HTML file for experiments
+    add_custom_target(copy_html ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/html/index.html
+            ${CMAKE_BINARY_DIR}/index.html
+        COMMENT "Copying index.html from src/html/ to build directory"
+    )
+endif()
+
+# Python bindings target (only if enabled and not building for Emscripten)
 if(BUILD_PYTHON_BINDINGS)
     pybind11_add_module(pyspz src/cc/python/bindings.cc)
     target_include_directories(pyspz PRIVATE src src/cc)
     target_link_libraries(pyspz PRIVATE spz_static zstd::zstd)
-
     set_target_properties(pyspz PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/pyspz"
         PREFIX ""
@@ -145,38 +189,38 @@ if(BUILD_PYTHON_BINDINGS)
     )
 endif()
 
-# Release build optimizations
 if(CMAKE_BUILD_TYPE MATCHES "Release")
     # Enable LTO if supported
     if(IPO_SUPPORTED)
         message(STATUS "Enabling Link Time Optimization (LTO)")
-        foreach(target spz_shared spz_static spz_exe)
-            set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-        endforeach()
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
     else()
         message(STATUS "LTO not supported: ${IPO_ERROR}")
     endif()
 
-    # Configure architecture-specific optimizations
-    if(USE_MARCH_NATIVE)
-        message(STATUS "Setting -march=native")
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native")
-    else()
-        if (NOT MSVC)
-            if(CMAKE_SYSTEM_PROCESSOR MATCHES "86")
-                # For x86/x64 processors
-                if(NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "march=")
-                    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=x86-64-v3")
+    if(NOT IS_WASM)
+        if(USE_MARCH_NATIVE)
+            message(STATUS "Setting -march=native")
+            set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native")
+        else()
+            if(NOT MSVC)
+                if(CMAKE_SYSTEM_PROCESSOR MATCHES "86")
+                    # For x86/x64 processors
+                    if(NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "march=")
+                        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=x86-64-v3")
+                    endif()
+                elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch")
+                    # For ARM processors
+                    if(NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "march=")
+                        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=armv8.2-a")
+                    endif()
+                else()
+                    message(WARNING "Unsupported architecture: -march option not set.")
                 endif()
-            elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch")
-                # For ARM processors
-                if(NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "march=")
-                    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=armv8.2-a")
-                endif()
-            else()
-                message(WARNING "Unsupported architecture: -march option not set.")
             endif()
         endif()
+    else()
+        message(STATUS "Skipping architecture-specific optimizations for Emscripten.")
     endif()
 
     # Generate build information
@@ -200,11 +244,19 @@ if(CMAKE_BUILD_TYPE MATCHES "Release")
 endif()
 
 # Installation configuration
-install(TARGETS spz_shared spz_static
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-)
+if(NOT IS_WASM)
+    install(TARGETS spz_shared spz_static
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+    )
+else()
+    install(TARGETS spz_static
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+    )
+endif()
 
 if(BUILD_PYTHON_BINDINGS)
     install(TARGETS pyspz

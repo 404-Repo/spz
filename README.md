@@ -121,6 +121,10 @@ cd spz
 pip install .
 ```
 
+## WASM example
+The project includes a WebAssembly module demo, which you can find in [src/cc/html/index.html](src/html/index.html).
+It will be copied to the build directory where the js and wasm module will be located after the build.
+
 ## Python example
 
 ```Python
