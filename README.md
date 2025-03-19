@@ -7,6 +7,7 @@ This is a modified version of the [SPZ library](https://github.com/nianticlabs/s
 - **Console Utilities**: Command-line tool added for compressing and decompressing `.spz` files.
 - **Improved Performance**: The default `march` target is set to `x86-64-v3`, along with various small fixes and optimizations for better performance.
 - **Python Bindings**: Python bindings have been implemented using `pybind11`.
+- **WASM Support**: WebAssembly support has been added to run compression and decompression in a web environment.
 
 ## Recommendations and Good to Know
 In my tests for this project, Clang 19.1.7 generated significantly better code than GCC 14.2.1. I therefore recommend using Clang.\
@@ -122,7 +123,7 @@ pip install .
 ```
 
 ## WASM example
-The project includes a WebAssembly module demo, which you can find in [src/cc/html/index.html](src/html/index.html).
+The project includes a WebAssembly module demo, which you can find in [src/html/index.html](src/html/index.html).
 It will be copied to the build directory where the js and wasm module will be located after the build.
 
 ## Python example
