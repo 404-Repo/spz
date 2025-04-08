@@ -2,37 +2,125 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SPZ Compression/Decompression Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>SPZ Compression/Decompression</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/@zip.js/zip.js@2.7.60/dist/zip.min.js"></script>
+  <style>
+    body { font-family: 'Roboto', sans-serif; background: #fafafa; color: #212121; margin: 16px; line-height: 1.6; }
+    h1 { margin-bottom: 6px; font-size: 24px; }
+    h2 { font-size: 20px; margin: 32px 0 8px; }
+    hr { border: none; border-top: 1px solid #e0e0e0; margin: 24px 0; }
+    button { background: #2196f3; border: none; color: #fff; padding: 10px 16px; margin: 8px 0; border-radius: 4px; font-size: 14px; cursor: pointer; transition: background .3s; }
+    button:hover { background: #1976d2; }
+    .drop-zone {
+      border: 2px dashed #90caf9;
+      border-radius: 4px;
+      padding: clamp(15px, 5vw, 30px);
+      color: #90a4ae;
+      margin-bottom: 16px;
+      min-height: 10vh;
+      font-size: clamp(16px, 2vw, 20px);
+      transition: background-color .3s, border-color .3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .drop-zone.dragover { background: #e3f2fd; border-color: #42a5f5; color: #0d47a1; }
+    .file-entry { background: #fff; padding: 12px; margin-bottom: 12px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+    input[type="file"] { display: none; }
+    label.file-label { display: inline-block; background: #eee; color: #424242; padding: 8px 12px; border-radius: 4px; cursor: pointer; transition: background .3s; }
+    label.file-label:hover { background: #e0e0e0; }
+    .file-count {
+      margin-left: 10px;
+      font-style: italic;
+      color: #424242;
+    }
+  </style>
 </head>
 <body>
-  <h1>SPZ Compression and Decompression Test Using WebAssembly</h1>
+  <h1>SPZ Compression/Decompression</h1>
   <hr>
-
-  <h2>Compression</h2>
-  <p>Select an input file (e.g., a PLY file) to compress into SPZ:</p>
-  <input type="file" id="compress-file-input">
-  <br><br>
-  <button id="compress-btn" disabled>Compress File</button>
-  <div id="compress-status"></div>
+  <section id="compression-section">
+    <h2>Compression</h2>
+    <p>Select files to compress into SPZ.</p>
+    <label class="file-label" for="compress-file-input">Choose Files</label>
+    <span id="compress-file-count" class="file-count">No files selected</span>
+    <input type="file" id="compress-file-input" multiple>
+    <div id="compress-drop-zone" class="drop-zone">Drag and drop files here!</div>
+    <button id="compress-btn" disabled>Compress File(s)</button>
+    <div id="compress-status"></div>
+  </section>
   <hr>
-
-  <h2>Decompression</h2>
-  <p>Select an input file (e.g., an SPZ file) to decompress to PLY:</p>
-  <input type="file" id="decompress-file-input">
-  <br>
-  <label>
-    <input type="checkbox" id="include-normals"> Include Normals
-  </label>
-  <br><br>
-  <button id="decompress-btn" disabled>Decompress File</button>
-  <div id="decompress-status"></div>
-
-  <!-- Load the Emscripten-generated module -->
+  <section id="decompression-section">
+    <h2>Decompression</h2>
+    <p>Select SPZ files to decompress to PLY.</p>
+    <label class="file-label" for="decompress-file-input">Choose Files</label>
+    <span id="decompress-file-count" class="file-count">No files selected</span>
+    <input type="file" id="decompress-file-input" multiple>
+    <br>
+    <label><input type="checkbox" id="include-normals"> Include Normals</label>
+    <br>
+    <div id="decompress-drop-zone" class="drop-zone">Drag and drop files here!</div>
+    <button id="decompress-btn" disabled>Decompress File(s)</button>
+    <div id="decompress-status"></div>
+  </section>
   <script src="spz_wasm.js"></script>
+  <script>
+    let compressResults = [];
+    let decompressResults = [];
 
-  <!-- JavaScript logic -->
-  <script type="text/javascript">
+    function createDownloadAllButton(id, text, callback) {
+      const btn = document.createElement("button");
+      btn.id = id;
+      btn.textContent = text;
+      btn.addEventListener("click", callback);
+      return btn;
+    }
+
+    function showDownloadAllButtonForCompression() {
+      if (!document.getElementById("download-all-compress")) {
+        const btn = createDownloadAllButton("download-all-compress", "Download All Compressed Files", async function() {
+          if (compressResults.length === 0) return;
+          const zipWriter = new zip.ZipWriter(new zip.BlobWriter("application/zip"));
+          for (const item of compressResults) {
+            await zipWriter.add(item.name, new zip.BlobReader(item.blob), { level: 0 });
+          }
+          const blob = await zipWriter.close();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "compressed_files.zip";
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+        const statusDiv = document.getElementById("compress-status");
+        statusDiv.parentNode.insertBefore(btn, statusDiv.nextSibling);
+      }
+    }
+
+    function showDownloadAllButtonForDecompression() {
+      if (!document.getElementById("download-all-decompress")) {
+        const btn = createDownloadAllButton("download-all-decompress", "Download All Decompressed Files", async function() {
+          if (decompressResults.length === 0) return;
+          const zipWriter = new zip.ZipWriter(new zip.BlobWriter("application/zip"));
+          for (const item of decompressResults) {
+            await zipWriter.add(item.name, new zip.BlobReader(item.blob), { level: 0 });
+          }
+          const blob = await zipWriter.close();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "decompressed_files.zip";
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+        const statusDiv = document.getElementById("decompress-status");
+        statusDiv.parentNode.insertBefore(btn, statusDiv.nextSibling);
+      }
+    }
+
     class MemoryManager {
       constructor() {
         this.inputPtr = null;
@@ -40,8 +128,6 @@
         this.outputSizePtr = null;
         this.outputPtr = null;
       }
-
-      // Allocate memory for input and output pointers
       prepareMemory(inputData) {
         const inputSize = inputData.length;
         this.inputPtr = Module._malloc(inputSize);
@@ -49,32 +135,18 @@
         this.outputPtrPtr = Module._malloc(4);
         this.outputSizePtr = Module._malloc(4);
       }
-
-      // Get the pointer to the output buffer
       getOutputPtr() {
         this.outputPtr = Module.getValue(this.outputPtrPtr, "i32");
         return this.outputPtr;
       }
-
-      // Get the size of the output buffer
       getOutputSize() {
         return Module.getValue(this.outputSizePtr, "i32");
       }
-
-      // Free all allocated memory
       freeAll() {
-        if (this.inputPtr !== null) {
-          Module._free(this.inputPtr);
-        }
-        if (this.outputPtrPtr !== null) {
-          Module._free(this.outputPtrPtr);
-        }
-        if (this.outputSizePtr !== null) {
-          Module._free(this.outputSizePtr);
-        }
-        if (this.outputPtr !== null) {
-          Module._free(this.outputPtr);
-        }
+        if (this.inputPtr !== null) Module._free(this.inputPtr);
+        if (this.outputPtrPtr !== null) Module._free(this.outputPtrPtr);
+        if (this.outputSizePtr !== null) Module._free(this.outputSizePtr);
+        if (this.outputPtr !== null) Module._free(this.outputPtr);
         this.inputPtr = null;
         this.outputPtrPtr = null;
         this.outputSizePtr = null;
@@ -82,117 +154,203 @@
       }
     }
 
-    // Initialize the WebAssembly module and set up event listeners
+    function processCompressFile(file, isLastFile) {
+      const statusDiv = document.getElementById("compress-status");
+      const memoryManager = new MemoryManager();
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const arrayBuffer = e.target.result;
+        const inputData = new Uint8Array(arrayBuffer);
+        memoryManager.prepareMemory(inputData);
+
+        const startTime = performance.now();
+        const retCode = Module._compress_spz(
+          memoryManager.inputPtr,
+          inputData.length,
+          3,
+          memoryManager.outputPtrPtr,
+          memoryManager.outputSizePtr
+        );
+        const compressionTime = performance.now() - startTime;
+
+        if (retCode !== 0) {
+          statusDiv.innerHTML = "<p>Error compressing file (code " + retCode + ")</p>";
+          memoryManager.freeAll();
+          return;
+        }
+
+        const outputPtr = memoryManager.getOutputPtr();
+        const outputSize = memoryManager.getOutputSize();
+        const compressedData = new Uint8Array(Module.HEAPU8.buffer, outputPtr, outputSize);
+        const blob = new Blob([compressedData], { type: "application/octet-stream" });
+
+        console.log(`Compression time for ${file.name}: ${compressionTime.toFixed(2)} ms`);
+
+        const outName = file.name.replace(/\.[^/.]+$/, "") + ".spz";
+        compressResults.push({ name: outName, blob: blob });
+
+        if (isLastFile) {
+          const fileEntry = document.createElement("div");
+          fileEntry.className = "file-entry";
+          fileEntry.innerHTML = "<p>Compression completed</p>";
+          statusDiv.appendChild(fileEntry);
+          showDownloadAllButtonForCompression();
+        }
+
+        memoryManager.freeAll();
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function processDecompressFile(file, isLastFile, includeNormals) {
+      const statusDiv = document.getElementById("decompress-status");
+      const memoryManager = new MemoryManager();
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const arrayBuffer = e.target.result;
+        const inputData = new Uint8Array(arrayBuffer);
+        memoryManager.prepareMemory(inputData);
+
+        const startTime = performance.now();
+        const retCode = Module._decompress_spz(
+          memoryManager.inputPtr,
+          inputData.length,
+          includeNormals ? 1 : 0,
+          memoryManager.outputPtrPtr,
+          memoryManager.outputSizePtr
+        );
+        const decompressionTime = performance.now() - startTime;
+
+        if (retCode !== 0) {
+          statusDiv.innerHTML = "<p>Error decompressing file (code " + retCode + ")</p>";
+          memoryManager.freeAll();
+          return;
+        }
+
+        const outputPtr = memoryManager.getOutputPtr();
+        const outputSize = memoryManager.getOutputSize();
+        const decompressedData = new Uint8Array(Module.HEAPU8.buffer, outputPtr, outputSize);
+        const blob = new Blob([decompressedData], { type: "application/octet-stream" });
+
+        console.log(`Decompression time for ${file.name}: ${decompressionTime.toFixed(2)} ms`);
+
+        let baseName = file.name;
+        if (baseName.toLowerCase().endsWith(".spz")) {
+          baseName = baseName.slice(0, -4);
+        }
+        if (!baseName.toLowerCase().endsWith(".ply")) {
+          baseName += ".ply";
+        }
+
+        decompressResults.push({ name: baseName, blob: blob });
+
+        if (isLastFile) {
+          const fileEntry = document.createElement("div");
+          fileEntry.className = "file-entry";
+          fileEntry.innerHTML = "<p>Decompression completed</p>";
+          statusDiv.appendChild(fileEntry);
+          showDownloadAllButtonForDecompression();
+        }
+
+        memoryManager.freeAll();
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function processCompressFiles(files) {
+      compressResults = [];
+      document.getElementById("compress-status").innerHTML = "";
+      const existingCompressBtn = document.getElementById("download-all-compress");
+      if (existingCompressBtn) { existingCompressBtn.remove(); }
+      for (let i = 0; i < files.length; i++) {
+        processCompressFile(files[i], i === files.length - 1);
+      }
+    }
+
+    function processDecompressFiles(files, includeNormals) {
+      decompressResults = [];
+      document.getElementById("decompress-status").innerHTML = "";
+      const existingDecompressBtn = document.getElementById("download-all-decompress");
+      if (existingDecompressBtn) { existingDecompressBtn.remove(); }
+      for (let i = 0; i < files.length; i++) {
+        processDecompressFile(files[i], i === files.length - 1, includeNormals);
+      }
+    }
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
     Module.onRuntimeInitialized = function() {
-      // Enable buttons once the module is loaded
       document.getElementById("compress-btn").disabled = false;
       document.getElementById("decompress-btn").disabled = false;
 
-      // Compression button event listener
-      document.getElementById("compress-btn").addEventListener("click", function() {
-        const memoryManager = new MemoryManager();
-        const fileInput = document.getElementById("compress-file-input");
-        const statusDiv = document.getElementById("compress-status");
-        statusDiv.innerHTML = "";
-
-        if (fileInput.files.length === 0) {
-          statusDiv.innerHTML = "<p>Please choose a file first.</p>";
-          return;
-        }
-
-        const file = fileInput.files[0];
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          const arrayBuffer = e.target.result;
-          const inputData = new Uint8Array(arrayBuffer);
-          memoryManager.prepareMemory(inputData);
-
-          const startTime = performance.now();
-          const retCode = Module._compress_spz(
-            memoryManager.inputPtr,
-            inputData.length,
-            3, // Compression level (hardcoded for this example)
-            memoryManager.outputPtrPtr,
-            memoryManager.outputSizePtr
-          );
-          const endTime = performance.now();
-          const compressionTime = endTime - startTime;
-          console.log(`Compression time: ${compressionTime.toFixed(2)} ms`);
-
-          if (retCode !== 0) {
-            statusDiv.innerHTML = `<p>Error during compression: code ${retCode}</p>`;
-            memoryManager.freeAll();
-            return;
-          }
-
-          const outputPtr = memoryManager.getOutputPtr();
-          const outputSize = memoryManager.getOutputSize();
-          const compressedData = new Uint8Array(Module.HEAPU8.buffer, outputPtr, outputSize);
-          const blob = new Blob([compressedData], { type: 'application/octet-stream' });
-          const url = URL.createObjectURL(blob);
-          const downloadLink = document.createElement("a");
-          downloadLink.href = url;
-          downloadLink.download = "compressed.spz";
-          downloadLink.textContent = "Download Compressed File";
-          statusDiv.appendChild(downloadLink);
-
-          memoryManager.freeAll();
-        };
-        reader.readAsArrayBuffer(file);
+      document.getElementById("compress-file-input").addEventListener("change", function(e) {
+        const count = e.target.files.length;
+        document.getElementById("compress-file-count").textContent =
+          count > 0 ? count + " file" + (count !== 1 ? "s" : "") + " selected" : "No files selected";
+      });
+      document.getElementById("decompress-file-input").addEventListener("change", function(e) {
+        const count = e.target.files.length;
+        document.getElementById("decompress-file-count").textContent =
+          count > 0 ? count + " file" + (count !== 1 ? "s" : "") + " selected" : "No files selected";
       });
 
-      // Decompression button event listener
-      document.getElementById("decompress-btn").addEventListener("click", function() {
-        const memoryManager = new MemoryManager();
-        const fileInput = document.getElementById("decompress-file-input");
-        const statusDiv = document.getElementById("decompress-status");
-        statusDiv.innerHTML = "";
-
-        if (fileInput.files.length === 0) {
-          statusDiv.innerHTML = "<p>Please choose a file first.</p>";
+      document.getElementById("compress-btn").addEventListener("click", function() {
+        const files = document.getElementById("compress-file-input").files;
+        if (files.length === 0) {
+          document.getElementById("compress-status").innerHTML = "<p>Please choose a file first.</p>";
           return;
         }
+        processCompressFiles(files);
+      });
 
-        const file = fileInput.files[0];
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          const arrayBuffer = e.target.result;
-          const inputData = new Uint8Array(arrayBuffer);
-          memoryManager.prepareMemory(inputData);
+      document.getElementById("decompress-btn").addEventListener("click", function() {
+        const files = document.getElementById("decompress-file-input").files;
+        if (files.length === 0) {
+          document.getElementById("decompress-status").innerHTML = "<p>Please choose a file first.</p>";
+          return;
+        }
+        const includeNormals = document.getElementById("include-normals").checked;
+        processDecompressFiles(files, includeNormals);
+      });
 
-          const includeNormals = document.getElementById("include-normals").checked ? 1 : 0;
-          const startTime = performance.now();
-          const retCode = Module._decompress_spz(
-            memoryManager.inputPtr,
-            inputData.length,
-            includeNormals,
-            memoryManager.outputPtrPtr,
-            memoryManager.outputSizePtr
-          );
-          const endTime = performance.now();
-          const decompressionTime = endTime - startTime;
-          console.log(`Decompression time: ${decompressionTime.toFixed(2)} ms`);
+      const compressDropZone = document.getElementById("compress-drop-zone");
+      ["dragenter", "dragover", "dragleave", "drop"].forEach(function(evt) {
+        compressDropZone.addEventListener(evt, preventDefaults, false);
+      });
+      compressDropZone.addEventListener("dragover", function() {
+        compressDropZone.classList.add("dragover");
+      });
+      compressDropZone.addEventListener("dragleave", function() {
+        compressDropZone.classList.remove("dragover");
+      });
+      compressDropZone.addEventListener("drop", function(e) {
+        compressDropZone.classList.remove("dragover");
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+          processCompressFiles(files);
+        }
+      });
 
-          if (retCode !== 0) {
-            statusDiv.innerHTML = `<p>Error during decompression: code ${retCode}</p>`;
-            memoryManager.freeAll();
-            return;
-          }
-
-          const outputPtr = memoryManager.getOutputPtr();
-          const outputSize = memoryManager.getOutputSize();
-          const decompressedData = new Uint8Array(Module.HEAPU8.buffer, outputPtr, outputSize);
-          const blob = new Blob([decompressedData], { type: 'application/octet-stream' });
-          const url = URL.createObjectURL(blob);
-          const downloadLink = document.createElement("a");
-          downloadLink.href = url;
-          downloadLink.download = "decompressed.ply";
-          downloadLink.textContent = "Download Decompressed File";
-          statusDiv.appendChild(downloadLink);
-
-          memoryManager.freeAll();
-        };
-        reader.readAsArrayBuffer(file);
+      const decompressDropZone = document.getElementById("decompress-drop-zone");
+      ["dragenter", "dragover", "dragleave", "drop"].forEach(function(evt) {
+        decompressDropZone.addEventListener(evt, preventDefaults, false);
+      });
+      decompressDropZone.addEventListener("dragover", function() {
+        decompressDropZone.classList.add("dragover");
+      });
+      decompressDropZone.addEventListener("dragleave", function() {
+        decompressDropZone.classList.remove("dragover");
+      });
+      decompressDropZone.addEventListener("drop", function(e) {
+        decompressDropZone.classList.remove("dragover");
+        const files = e.dataTransfer.files;
+        const includeNormals = document.getElementById("include-normals").checked;
+        if (files.length > 0) {
+          processDecompressFiles(files, includeNormals);
+        }
       });
     };
   </script>
