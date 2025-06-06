@@ -45,7 +45,8 @@ def decompress(input_data: bytes, include_normals: bool) -> bytes:
 ```
 
 ## File Format
-The .spz format utilizes a zstd-compressed stream of data, consisting of a 16-byte header followed by the Gaussian data. This data is organized by attribute in the following order: positions, scales, rotations, alphas, colors, and spherical harmonics.
+The .spz format utilizes a zstd-compressed stream of data, consisting of a 16-byte header followed by the Gaussian data. This data is organized by attribute in the following order: positions,
+alphas, colors, scales, rotations and spherical harmonics.
 
 ### Header
 

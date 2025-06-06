@@ -26,14 +26,13 @@ void printUsage(const std::string &programName) {
   std::cout
       << "Usage:\n"
       << "  " << programName
-      << " -e|-d -i <input_file> -o <output_file> [-c <compression_level>] [-w "
+      << " -e|-d -i <input_file_or_directory> -o <output_file_or_directory> [-c <compression_level>] [-w "
          "<workers>] [-n]\n\n"
       << "Options:\n"
-      << "  -e                     Compress the input file to SPZ format.\n"
-      << "  -d                     Decompress the input SPZ file to PLY "
-         "format.\n"
-      << "  -i <input_file>        Specify the input file.\n"
-      << "  -o <output_file>       Specify the output file.\n"
+      << "  -e                     Compress the input file or directory to SPZ format.\n"
+      << "  -d                     Decompress the input SPZ file or directory to PLY format.\n"
+      << "  -i <input_file>        Specify the input file or directory.\n"
+      << "  -o <output_file>       Specify the output file or directory.\n"
       << "  -c <compression_level> (Optional) Specify the compression level "
          "(1-22). Default is 3.\n"
       << "  -w <workers>           (Optional) Specify the number of worker "
@@ -124,7 +123,6 @@ int compressFile(const ProgramOptions &options) {
   uintmax_t inputSize = fs::file_size(options.inputFilename);
   std::cout << "Input file size: " << inputSize << " bytes.\n";
 
-  // Load Gaussian cloud from PLY file
   spz::GaussianCloud cloud = spz::loadSplatFromPly(options.inputFilename);
   if (cloud.numPoints == 0) {
     std::cerr << "Failed to load Gaussian cloud from " << options.inputFilename
@@ -147,7 +145,6 @@ int compressFile(const ProgramOptions &options) {
                       .count();
   std::cout << "Compression completed in " << duration << " ms.\n";
 
-  // Write compressed data to output file
   std::ofstream outFile(options.outputFilename, std::ios::binary);
   if (!outFile) {
     std::cerr << "Failed to open output file: " << options.outputFilename
@@ -163,7 +160,6 @@ int compressFile(const ProgramOptions &options) {
 
   std::cout << "Compressed data saved to " << options.outputFilename << "\n";
 
-  // Calculate and display size reduction
   double sizeReduction =
       inputSize > 0
           ? (static_cast<double>(inputSize - data.size()) / inputSize) * 100.0
@@ -228,6 +224,86 @@ int decompressFile(const ProgramOptions &options) {
   return 0;
 }
 
+int compressDirectory(const ProgramOptions &options) {
+  fs::path inputDir(options.inputFilename);
+  fs::path outputDir(options.outputFilename);
+  if (!fs::exists(inputDir) || !fs::is_directory(inputDir)) {
+    std::cerr << "Input directory does not exist or is not a directory: " << options.inputFilename << "\n";
+    return 1;
+  }
+  if (fs::exists(outputDir) && !fs::is_directory(outputDir)) {
+    std::cerr << "Output path exists and is not a directory: " << options.outputFilename << "\n";
+    return 1;
+  }
+  if (!fs::exists(outputDir)) {
+    if (!fs::create_directories(outputDir)) {
+      std::cerr << "Failed to create output directory: " << options.outputFilename << "\n";
+      return 1;
+    }
+  }
+  bool found = false;
+  for (const auto &entry : fs::directory_iterator(inputDir)) {
+    if (!entry.is_regular_file()) continue;
+    if (entry.path().extension() != ".ply") continue;
+    found = true;
+    ProgramOptions localOptions = options;
+    localOptions.inputFilename = entry.path().string();
+    fs::path outFile = outputDir / entry.path().stem();
+    outFile += ".spz";
+    localOptions.outputFilename = outFile.string();
+    int result = compressFile(localOptions);
+    if (result != 0) return result;
+  }
+  if (!found) {
+    std::cerr << "No .ply files found in directory: " << options.inputFilename << "\n";
+    return 1;
+  }
+  return 0;
+}
+
+int decompressDirectory(const ProgramOptions &options) {
+  fs::path inputDir(options.inputFilename);
+  fs::path outputDir(options.outputFilename);
+  if (!fs::exists(inputDir) || !fs::is_directory(inputDir)) {
+    std::cerr << "Input directory does not exist or is not a directory: " << options.inputFilename << "\n";
+    return 1;
+  }
+  fs::path absInput = fs::absolute(inputDir);
+  fs::path absOutput = fs::absolute(outputDir);
+  if (absInput == absOutput) {
+    std::cerr << "Input and output directories must be different.\n";
+    return 1;
+  }
+  if (fs::exists(outputDir) && !fs::is_directory(outputDir)) {
+    std::cerr << "Output path exists and is not a directory: " << options.outputFilename << "\n";
+    return 1;
+  }
+  if (!fs::exists(outputDir)) {
+    if (!fs::create_directories(outputDir)) {
+      std::cerr << "Failed to create output directory: " << options.outputFilename << "\n";
+      return 1;
+    }
+  }
+  bool found = false;
+  for (const auto &entry : fs::directory_iterator(inputDir)) {
+    if (!entry.is_regular_file()) continue;
+    if (entry.path().extension() != ".spz") continue;
+    found = true;
+    ProgramOptions localOptions = options;
+    localOptions.inputFilename = entry.path().string();
+    fs::path outFile = outputDir / entry.path().stem();
+    outFile += ".ply";
+    localOptions.outputFilename = outFile.string();
+    int result = decompressFile(localOptions);
+    if (result != 0) return result;
+  }
+  if (!found) {
+    std::cerr << "No .spz files found in directory: " << options.inputFilename << "\n";
+    return 1;
+  }
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
   ProgramOptions options;
 
@@ -236,7 +312,12 @@ int main(int argc, char *argv[]) {
   }
 
   try {
-    return options.compress ? compressFile(options) : decompressFile(options);
+    fs::path inPath(options.inputFilename);
+    if (fs::exists(inPath) && fs::is_directory(inPath)) {
+      return options.compress ? compressDirectory(options) : decompressDirectory(options);
+    } else {
+      return options.compress ? compressFile(options) : decompressFile(options);
+    }
   } catch (const std::exception &e) {
     std::cerr << "Exception: " << e.what() << "\n";
     return 1;

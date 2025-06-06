@@ -6,6 +6,8 @@ project(spz
     DESCRIPTION "SPZ Library and Tools"
 )
 
+set(PYTHON_PACKAGE_BUILD $ENV{PYTHON_PACKAGE_BUILD} CACHE BOOL "" FORCE)
+
 # Build options
 option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
@@ -22,6 +24,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(MSVC)
+    if (CMAKE_BUILD_TYPE STREQUAL "Release")
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    endif()
     add_compile_definitions(_USE_MATH_DEFINES)
 endif()
 
@@ -40,7 +45,7 @@ include(CheckIPOSupported)
 
 # Python bindings setup
 if(BUILD_PYTHON_BINDINGS)
-    find_package(Python COMPONENTS Interpreter Development REQUIRED)
+    find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
 
     FetchContent_Declare(
         pybind11
@@ -61,6 +66,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(zstd)
 
+set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "BUILD PROGRAMS" FORCE)
 # Configure ZSTD build options
 if(IS_WASM)
   set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "Enable multithreading in Zstd" FORCE)
@@ -183,9 +189,10 @@ if(BUILD_PYTHON_BINDINGS)
     target_include_directories(pyspz PRIVATE src src/cc)
     target_link_libraries(pyspz PRIVATE spz_static zstd::zstd)
     set_target_properties(pyspz PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/pyspz"
+        CXX_VISIBILITY_PRESET hidden
+        C_VISIBILITY_PRESET hidden
         PREFIX ""
-        SUFFIX "${PYTHON_MODULE_EXTENSION}"
+        LIBRARY_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/pyspz"
     )
 endif()
 
@@ -193,35 +200,32 @@ if(CMAKE_BUILD_TYPE MATCHES "Release")
     # Enable LTO if supported
     if(IPO_SUPPORTED)
         message(STATUS "Enabling Link Time Optimization (LTO)")
-        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
     else()
         message(STATUS "LTO not supported: ${IPO_ERROR}")
     endif()
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ${IPO_SUPPORTED})
 
+    # Collect flags
+    set(_extra_release_flags)
     if(IS_WASM)
         message(STATUS "Enabling SIMD128 for WebAssembly")
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -msimd128")
-    else()
-        if(USE_MARCH_NATIVE)
-            message(STATUS "Setting -march=native")
-            set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native")
+        list(APPEND _extra_release_flags "-msimd128")
+    elseif(USE_MARCH_NATIVE)
+        message(STATUS "Setting -march=native")
+        list(APPEND _extra_release_flags "-march=native")
+    elseif(NOT MSVC)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "86")
+            list(APPEND _extra_release_flags "-march=x86-64-v3")
+        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(arm|aarch)")
+            list(APPEND _extra_release_flags "-march=armv8.2-a")
         else()
-            if(NOT MSVC)
-                if(CMAKE_SYSTEM_PROCESSOR MATCHES "86")
-                    # For x86/x64 processors
-                    if(NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "march=")
-                        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=x86-64-v3")
-                    endif()
-                elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch")
-                    # For ARM processors
-                    if(NOT CMAKE_CXX_FLAGS_RELEASE MATCHES "march=")
-                        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=armv8.2-a")
-                    endif()
-                else()
-                    message(WARNING "Unsupported architecture: -march option not set.")
-                endif()
-            endif()
+            message(WARNING "Unsupported architecture: -march option not set.")
         endif()
+    endif()
+    if(_extra_release_flags)
+        set(CMAKE_CXX_FLAGS_RELEASE
+            "${CMAKE_CXX_FLAGS_RELEASE} ${_extra_release_flags}"
+        )
     endif()
 
     # Generate build information
@@ -245,18 +249,20 @@ if(CMAKE_BUILD_TYPE MATCHES "Release")
 endif()
 
 # Installation configuration
-if(NOT IS_WASM)
+if(NOT PYTHON_PACKAGE_BUILD)
+  if(NOT IS_WASM)
     install(TARGETS spz_shared spz_static
         RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
     )
-else()
+  else()
     install(TARGETS spz_static
         RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
     )
+  endif()
 endif()
 
 if(BUILD_PYTHON_BINDINGS)

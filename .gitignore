@@ -6,3 +6,4 @@ _skbuild/
 .mypy_cache/
 pyspz.egg-info/
 pyspz/**/*.so
+dist/
