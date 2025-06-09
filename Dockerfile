@@ -1,4 +1,4 @@
-FROM alpine:3.21 AS builder
+FROM alpine:3.22 AS builder
 RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories && \
     apk update && \
     apk add --no-cache cmake clang lld musl-dev python3 python3-dev py3-pip git ninja
@@ -11,7 +11,7 @@ COPY . /app
 ENV CC=clang CXX=clang++
 RUN pip install .
 
-FROM alpine:3.21
+FROM alpine:3.22
 RUN apk add --no-cache libstdc++ python3 && \
     rm -rf /var/cache/apk/*
 COPY --from=builder /opt/venv /opt/venv

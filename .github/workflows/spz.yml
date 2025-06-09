@@ -31,13 +31,17 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install cmake ninja python3
+          if ! brew list ninja &>/dev/null; then
+            brew install ninja
+          fi
+          brew install --formula cmake
+          brew install python3
 
-      - name: Set up Python 3.10 on Windows
+      - name: Set up Python 3.11 on Windows
         if: runner.os == 'Windows'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Configure CMake with MSBuild (Windows)
         if: runner.os == 'Windows'
@@ -64,21 +68,101 @@ jobs:
         if: runner.os != 'Windows'
         run: cmake --build build --parallel
 
-      - name: Install Python spz package on macOS using a virtual environment
+      - name: Azure Trusted Signing
+        if: runner.os == 'Windows'
+        uses: azure/trusted-signing-action@v0.5.1
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
+          certificate-profile-name: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
+          files-folder: "${{ github.workspace }}/build/Release"
+          files-folder-filter: "exe,dll"
+          files-folder-recurse: true
+
+      - name: Upload Windows binaries
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: spz-windows
+          path: |
+            ${{ github.workspace }}/build/Release/*.exe
+            ${{ github.workspace }}/build/Release/*.dll
+
+  build-wheels:
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build python3-pip
+
+      - name: Install dependencies on macOS
         if: runner.os == 'macOS'
         run: |
-          python3 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install .
+          brew update
+          if ! brew list ninja &>/dev/null; then
+            brew install ninja
+          fi
+          brew install --formula cmake
 
-      - name: Install Python spz package on Linux/Windows using pip
-        if: runner.os != 'macOS'
-        run: pip3 install .
+      - name: Install dependencies on Windows
+        if: runner.os == 'Windows'
+        run: |
+          choco install cmake --installargs '"ADD_CMAKE_TO_PATH=System"' -y
+          choco install ninja -y
+        shell: powershell
+
+      - name: Install Python build tools
+        run: |
+          python -m pip install --upgrade pip setuptools wheel scikit-build ninja cmake
+
+      - name: Prepare compiler environment for Windows
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.23.3
+        env:
+          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
+          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_ARCHS_WINDOWS: "AMD64"
+          CIBW_ARCHS_MACOS: "arm64"
+          CIBW_MANYLINUX_X86_64_IMAGE: quay.io/pypa/manylinux_2_34_x86_64:latest
+          CIBW_MUSLLINUX_X86_64_IMAGE: musllinux_1_2
+          CIBW_BEFORE_BUILD_LINUX: |
+            if [ -f /etc/redhat-release ]; then
+              yum update && yum install -y clang
+            elif [ -f /etc/alpine-release ]; then
+              apk update && apk add clang
+            fi
+          CIBW_ENVIRONMENT_LINUX: "CC=clang CXX=clang++"
+        with:
+          output-dir: dist/wheels
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyspz-wheels-${{ matrix.os }}
+          path: dist/wheels/*.whl
 
   build-docker:
-    name: Build Docker Image
+    needs: build
+    name: build docker image
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -93,8 +177,10 @@ jobs:
           DOCKER_BUILDKIT: 1
 
   build_wasm:
-    name: Build SPZ WASM (Emscripten)
+    needs: build
+    name: build spz-wasm (Emscripten)
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -102,11 +188,20 @@ jobs:
       - name: Setup Emscripten SDK
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 4.0.4
+          version: 4.0.9
 
       - name: Configure and build SPZ WASM
         run: |
-          mkdir build_wasm
-          cd build_wasm
+          mkdir "${{ github.workspace }}/build_wasm"
+          cd "${{ github.workspace }}/build_wasm"
           emcmake cmake -DCMAKE_BUILD_TYPE=Release ..
           cmake --build . -- -j$(nproc)
+
+      - name: Upload SPZ WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: spz-wasm
+          path: |
+            ${{ github.workspace }}/build_wasm/index.html
+            ${{ github.workspace }}/build_wasm/spz_wasm.js
+            ${{ github.workspace }}/build_wasm/spz_wasm.wasm

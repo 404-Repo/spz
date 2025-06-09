@@ -1,7 +1,10 @@
+import os
 import pathlib
 
 from setuptools import find_packages
 from skbuild import setup
+
+os.environ["PYTHON_PACKAGE_BUILD"] = "1"
 
 HERE = pathlib.Path(__file__).parent
 
@@ -17,6 +20,8 @@ setup(
     packages=find_packages(),
     install_requires=[],
     cmake_install_dir="pyspz",
+    include_package_data=True,
+    exclude_package_data={"": ["*.a", "*.h", "*.cmake"]},
     classifiers=[
         "Programming Language :: Python :: 3",
         "Programming Language :: C++",
@@ -27,9 +32,9 @@ setup(
     ],
     license="MIT",
     python_requires=">=3.10",
-    include_package_data=True,
     zip_safe=False,
     cmake_args=[
         "-DCMAKE_BUILD_TYPE=Release",
+        "-DBUILD_SHARED_LIBS=OFF",
     ],
 )
