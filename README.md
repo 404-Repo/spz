@@ -27,6 +27,13 @@ If you prefer compiled package, you can download and install the WHL package fro
 The project includes a WebAssembly module demo, which you can find in [src/html/index.html](src/html/index.html).<br>
 A full SPZ WASM example can be downloaded from the [release page](https://github.com/404-Repo/spz/releases).
 
+## C++ Build shared libraries and console utilities
+You can use [Ninja generator](https://ninja-build.org/) to speed up the build.
+```bash
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build . -- -j$(nproc)
+```
+
 ## C++ Interface
 ```C
 std::vector<uint8_t> compress(const std::vector<uint8_t> &rawData, int compressionLevel);

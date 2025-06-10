@@ -188,7 +188,7 @@ jobs:
       - name: Setup Emscripten SDK
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 4.0.9
+          version: 4.0.10
 
       - name: Configure and build SPZ WASM
         run: |
