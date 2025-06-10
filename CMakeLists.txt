@@ -169,7 +169,7 @@ if(IS_WASM)
         "-sWASM=1"
         "-sMODULARIZE=0"
         "-sEXPORTED_FUNCTIONS=['_compress_spz','_decompress_spz','_malloc','_free']"
-        "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','getValue']"
+        "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','getValue','HEAPU8']"
         "-sALLOW_MEMORY_GROWTH=1"
         "-sINITIAL_MEMORY=268435456"  # 256 MB initial memory
     )
