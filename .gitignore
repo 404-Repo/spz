@@ -2,6 +2,9 @@
 build/
 .cache
 .vscode
+.next
+_deps
+node_modules
 _skbuild/
 .mypy_cache/
 pyspz.egg-info/
