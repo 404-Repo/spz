@@ -24,7 +24,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(MSVC)
-    if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|ARM64)")
+        add_compile_options(/arch:AVX2)
+    endif()
+
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
     endif()
     add_compile_definitions(_USE_MATH_DEFINES)
@@ -96,6 +100,7 @@ set(LIBRARY_SOURCES
     src/cc/load-spz.cc
     src/cc/splat-c-types.cc
     src/cc/splat-types.cc
+    src/cc/shared.cc
 )
 
 set(EXECUTABLE_SOURCES
@@ -163,15 +168,21 @@ endif()
 
 # Add wasm.cc target for Emscripten builds
 if(IS_WASM)
-    add_executable(spz_wasm src/cc/wasm.cc)
+    add_executable(spz_wasm src/cc/shared.cc)
     target_link_libraries(spz_wasm PRIVATE spz_static)
+
+    target_compile_options(spz_wasm PRIVATE
+        "-fwasm-exceptions"
+    )
+
     target_link_options(spz_wasm PRIVATE
         "-sWASM=1"
         "-sMODULARIZE=0"
         "-sEXPORTED_FUNCTIONS=['_compress_spz','_decompress_spz','_malloc','_free']"
         "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','getValue','HEAPU8']"
         "-sALLOW_MEMORY_GROWTH=1"
-        "-sINITIAL_MEMORY=268435456"  # 256 MB initial memory
+        "-sINITIAL_MEMORY=268435456" # 256 MB initial memory
+        "-fwasm-exceptions"
     )
 
     # Copy HTML file for experiments
