@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.29)
 
 project(spz
     VERSION 1.0.0
-    LANGUAGES CXX
+    LANGUAGES CXX C
     DESCRIPTION "SPZ Library and Tools"
 )
 
@@ -22,6 +22,18 @@ option(ENABLE_UBSAN "Enable Undefined Behavior Sanitizer" OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+include(CheckCSourceCompiles)
+check_c_source_compiles("
+#include <features.h>
+#if defined(__GLIBC__)
+#error \"This is glibc, not musl\"
+#endif
+#include <stdio.h>
+int main() { return 0; }
+" IS_MUSL)
+
+option(ALPINE_STATIC "Force fully static build when using musl/Alpine" ${IS_MUSL})
 
 if(MSVC)
     if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|ARM64)")
@@ -109,7 +121,22 @@ set(EXECUTABLE_SOURCES
 
 # Shared library target
 if(NOT IS_WASM)
-    add_library(spz_shared SHARED ${LIBRARY_SOURCES})
+    if(ALPINE_STATIC)
+        message(STATUS "musl detected, producing shared library with static musl linking")
+        add_library(spz_shared SHARED ${LIBRARY_SOURCES})
+        add_definitions(-D_FORTIFY_SOURCE=0)
+        target_link_options(spz_shared PRIVATE 
+            -static
+            -static-libgcc 
+            -static-libstdc++
+            -fPIC
+        )
+        target_compile_options(spz_shared PRIVATE -fPIC)
+    else()
+        message(STATUS "musl not detected, building shared library with dynamic glibc")
+        add_library(spz_shared SHARED ${LIBRARY_SOURCES})
+    endif()
+    
     set_target_properties(spz_shared PROPERTIES
         VERSION ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR}
@@ -147,6 +174,14 @@ if(NOT IS_WASM)
     set_target_properties(spz_exe PROPERTIES OUTPUT_NAME "spz")
     target_include_directories(spz_exe PRIVATE src src/cc)
     target_link_libraries(spz_exe PRIVATE spz_static zstd::zstd)
+
+    if(ALPINE_STATIC)
+        target_link_options(spz_exe PRIVATE 
+            -static
+            -static-libgcc 
+            -static-libstdc++
+        )
+    endif()
 
     # Sanitizer configuration (only for traditional builds)
     if(ENABLE_ASAN OR ENABLE_UBSAN)
