@@ -71,6 +71,25 @@ jobs:
         if: runner.os != 'Windows'
         run: cmake --build build --parallel
 
+      - name: Collect macOS artifacts
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p artifacts
+          if [ -f "${{ github.workspace }}/build/spz" ]; then
+            cp "${{ github.workspace }}/build/spz" artifacts/
+          fi
+          if [ -f "${{ github.workspace }}/build/libspz_shared.dylib" ]; then
+            cp "${{ github.workspace }}/build/libspz_shared.dylib" artifacts/ || true
+          fi
+        shell: bash
+
+      - name: Upload macOS binaries
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: spz-macos
+          path: artifacts
+
       - name: Azure Trusted Signing
         if: runner.os == 'Windows'
         uses: azure/trusted-signing-action@v0.5.9
