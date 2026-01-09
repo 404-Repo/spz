@@ -66,7 +66,7 @@ if(BUILD_PYTHON_BINDINGS)
     FetchContent_Declare(
         pybind11
         GIT_REPOSITORY https://github.com/pybind/pybind11.git
-        GIT_TAG        v2.13.6
+        GIT_TAG        v3.0.1
     )
     FetchContent_MakeAvailable(pybind11)
 endif()
