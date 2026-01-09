@@ -9,7 +9,7 @@ on:
       - main
   pull_request:
     branches:
-      - '**'
+      - "**"
   workflow_dispatch:
 
 env:
@@ -47,7 +47,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Configure CMake with MSBuild (Windows)
         if: runner.os == 'Windows'
@@ -95,7 +95,7 @@ jobs:
 
       - name: Azure Trusted Signing
         if: runner.os == 'Windows'
-        uses: azure/trusted-signing-action@v0.5.9
+        uses: azure/trusted-signing-action@v0.5.11
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -106,6 +106,8 @@ jobs:
           files-folder: "${{ github.workspace }}/build/Release"
           files-folder-filter: "exe,dll"
           files-folder-recurse: true
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
 
       - name: Upload Windows binaries
         if: runner.os == 'Windows'
@@ -133,7 +135,7 @@ jobs:
           mkdir -p artifacts
           docker cp spz-container:/spz artifacts/spz
           docker cp spz-container:/libspz_shared.so artifacts/libspz_shared.so
-      
+
       - name: Upload Linux binaries
         uses: actions/upload-artifact@v4
         with:
@@ -186,7 +188,7 @@ jobs:
           arch: x64
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.1.3
+        uses: pypa/cibuildwheel@v3.3.1
         env:
           CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
           CIBW_ARCHS_LINUX: "x86_64"
@@ -241,7 +243,7 @@ jobs:
       - name: Setup Emscripten SDK
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 4.0.10
+          version: 4.0.22
 
       - name: Configure and build SPZ WASM
         run: |

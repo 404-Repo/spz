@@ -1,4 +1,4 @@
-FROM oven/bun:1.2.19-alpine AS builder
+FROM oven/bun:1-alpine AS builder
 
 RUN apk update && apk upgrade --no-cache && apk add --no-cache openssl ca-certificates curl unzip && update-ca-certificates
 
@@ -15,7 +15,7 @@ RUN curl -sL https://github.com/404-Repo/spz/releases/latest/download/spz-wasm.z
 
 RUN bun run bun:build
 
-FROM oven/bun:1.2.19-alpine AS runner
+FROM oven/bun:1-alpine AS runner
 
 WORKDIR /app
 COPY --from=builder /app .

@@ -248,7 +248,9 @@ export default function Home() {
           </div>
 
           {compressStatus && (
-            <div className={styles.statusMessage}>
+            <div
+              className={`${styles.statusMessage} ${compressStatus === 'Processing...' ? styles.statusMessageProcessing : ''}`}
+            >
               {compressStatus}
             </div>
           )}
@@ -342,7 +344,9 @@ export default function Home() {
           </div>
 
           {decompressStatus && (
-            <div className={styles.statusMessage}>
+            <div
+              className={`${styles.statusMessage} ${decompressStatus === 'Processing...' ? styles.statusMessageProcessing : ''}`}
+            >
               {decompressStatus}
             </div>
           )}
